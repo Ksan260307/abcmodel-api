@@ -1,6 +1,7 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Tuple
+
 from .enums import XState
 from .utils import clamp, round_half_up, band_v, band_d, band_round_R
 from .config import (
@@ -12,13 +13,14 @@ from .schemas import ModelInput, ModelOutput, ComponentOutput, EFOutput
 
 @dataclass
 class ABCParams:
-    w_core: WeightsCore = WeightsCore()
-    w_ef: WeightsEF = WeightsEF()
-    k: InteractionsK = InteractionsK()
-    nl: NonlinearParams = NonlinearParams()
-    soc: SocialParams = SocialParams()
-    rsoft: RuinScoreSoft = RuinScoreSoft()
-    tr: TRParams = TRParams()
+    # ミュータブルなデフォルトは default_factory を使う
+    w_core: WeightsCore = field(default_factory=WeightsCore)
+    w_ef: WeightsEF = field(default_factory=WeightsEF)
+    k: InteractionsK = field(default_factory=InteractionsK)
+    nl: NonlinearParams = field(default_factory=NonlinearParams)
+    soc: SocialParams = field(default_factory=SocialParams)
+    rsoft: RuinScoreSoft = field(default_factory=RuinScoreSoft)
+    tr: TRParams = field(default_factory=TRParams)
 
 
 def _state_mag(s: XState) -> int:
@@ -53,9 +55,9 @@ def _apply_EF_overlay(core_v, core_d, core_s, ef, soc: SocialParams, kappa_socia
 
     adjE2 = min(2.0, E2['v'] + (soc.gamma_social - 1.0))  # 社会感受でE2強調
 
-    vA_p = clamp(A_v - 0.5*(E1['v'] + E3['v'] + E0['v']), 0, 2)
-    vB_p = clamp(B_v + max(0.5*adjE2, 0.5*E3['v']), 0, 2)
-    vC_p = clamp(C_v + max(0.5*adjE2, 0.5*E3['v'], 0.5*E0['v']), 0, 2)
+    vA_p = clamp(A_v - 0.5 * (E1['v'] + E3['v'] + E0['v']), 0, 2)
+    vB_p = clamp(B_v + max(0.5 * adjE2, 0.5 * E3['v']), 0, 2)
+    vC_p = clamp(C_v + max(0.5 * adjE2, 0.5 * E3['v'], 0.5 * E0['v']), 0, 2)
 
     dA_p = clamp(max(A_d, E1['d'], E3['d'], E0['d']), 0, 2)
     dB_p = clamp(max(B_d, E2['d'], E3['d']), 0, 2)
@@ -255,8 +257,7 @@ def _blend_soft(ra, rb, rc, params: ABCParams) -> Tuple[float, float]:
     return blend, soft
 
 
-def evaluate_once(inp: ModelInput, params: ABCParams,
-                  tr_state: Dict) -> Tuple[ModelOutput, Dict]:
+def evaluate_once(inp: ModelInput, params: ABCParams, tr_state: Dict) -> Tuple[ModelOutput, Dict]:
     """1フレーム評価。tr_stateは時系列用の保持情報（ZeroLock, cooldown, countersなど）"""
     # 取り込み
     A = inp.core.A; B = inp.core.B; C = inp.core.C
@@ -276,19 +277,26 @@ def evaluate_once(inp: ModelInput, params: ABCParams,
     ema_vA_prev = tr_state.get("ema_vA_prev", inp.ema_vA_prev)
 
     # 1) EF重畳（§6.1）
-    v_p, d_p, s_p, adjE2 = _apply_EF_overlay(core_v, core_d, core_s, ef={'E0': {'v': ef_v['E0'], 'd': ef_d['E0'], 'state': ef_s['E0']},
-                                                                          'E1': {'v': ef_v['E1'], 'd': ef_d['E1'], 'state': ef_s['E1']},
-                                                                          'E2': {'v': ef_v['E2'], 'd': ef_d['E2'], 'state': ef_s['E2']},
-                                                                          'E3': {'v': ef_v['E3'], 'd': ef_d['E3'], 'state': ef_s['E3']}},
-                                       soc=params.soc, kappa_socialC=params.soc.kappa_socialC)
+    v_p, d_p, s_p, adjE2 = _apply_EF_overlay(
+        core_v, core_d, core_s,
+        ef={
+            'E0': {'v': ef_v['E0'], 'd': ef_d['E0'], 'state': ef_s['E0']},
+            'E1': {'v': ef_v['E1'], 'd': ef_d['E1'], 'state': ef_s['E1']},
+            'E2': {'v': ef_v['E2'], 'd': ef_d['E2'], 'state': ef_s['E2']},
+            'E3': {'v': ef_v['E3'], 'd': ef_d['E3'], 'state': ef_s['E3']}
+        },
+        soc=params.soc, kappa_socialC=params.soc.kappa_socialC
+    )
 
     # 2) 相互作用I（§7.1〜7.2）
     v2, d2, s2 = _apply_interactions(v_p, d_p, s_p, params.k, params.nl, adjE2)
 
     # 3) TR（§11） fixed order & cooldown
-    v3, d3, s3, absent_count, cooldown = _apply_TR(v2, d2, s2, ef_states=ef_s, params=params,
-                                                   zero_lock=zero_lock, cooldown=cooldown,
-                                                   tr_runaway_absent_count=absent_count)
+    v3, d3, s3, absent_count, cooldown = _apply_TR(
+        v2, d2, s2, ef_states=ef_s, params=params,
+        zero_lock=zero_lock, cooldown=cooldown,
+        tr_runaway_absent_count=absent_count
+    )
 
     # 4) clamp（念押し）
     for kx in ('A', 'B', 'C'):
