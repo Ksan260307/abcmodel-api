@@ -1,6 +1,13 @@
 from fastapi import FastAPI, Header, HTTPException
 import os
 
+import sentry_sdk
+sentry_sdk.init(
+    dsn=os.environ.get("SENTRY_DSN"),
+    traces_sample_rate=0.1,  # 本番は 0.05〜0.2 程度に
+    send_default_pii=False
+)
+
 app = FastAPI(title="ABC Model Core API", version="3.0.0")
 
 REQUIRED_KEY = os.environ.get("API_KEY")  # Railway Variables で設定
