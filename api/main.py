@@ -6,6 +6,10 @@ from abcmodel_core.model import ABCParams, evaluate_once
 app = FastAPI(title="ABC Model Core v3.0.0 API", version="3.0.0")
 params = ABCParams()
 
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "abc-model-api"}
+
 @app.post("/v1/evaluate", response_model=ModelOutput)
 def evaluate(inp: ModelInput):
     out, _ = evaluate_once(inp, params, tr_state={})
